@@ -1,6 +1,6 @@
 [package]
 name = "mirror-catalog"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,6 +12,7 @@ serde = "1.0.196"
 serde_derive = "1.0.196"
 serde_json = "1.0.113"
 serde_yaml = "0.9.31"
+custom-logger = { git = "https://github.com/lmzuccarelli/rust-custom-logger", branch = "main", version = "0.1.4" }
 
 [dev-dependencies]
 serial_test = "2.0.0"

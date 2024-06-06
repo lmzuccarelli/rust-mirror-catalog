@@ -1,3 +1,4 @@
+use custom_logger::*;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_derive::{Deserialize, Serialize};
@@ -168,7 +169,7 @@ impl DeclarativeConfig {
         Ok(dc)
     }
 
-    pub fn build_updated_configs(base_dir: String) -> Result<(), Box<dyn Error>> {
+    pub fn build_updated_configs(log: &Logging, base_dir: String) -> Result<(), Box<dyn Error>> {
         for entry in WalkDir::new(base_dir.clone())
             .into_iter()
             .filter_map(Result::ok)
@@ -182,6 +183,9 @@ impl DeclarativeConfig {
                     Ok(file) => file,
                 };
 
+                let component = &file_name.split("/configs/").nth(1).unwrap();
+                log.debug(&format!("updating config : {:#?}", &component));
+
                 // Read the file contents into a string, returns `io::Result<usize>`
                 let mut s = String::new();
                 f.read_to_string(&mut s)?;
@@ -191,8 +195,8 @@ impl DeclarativeConfig {
                     // break the declarative config into chunks
                     // similar to what ibm have done in the breakdown of catalogs
                     if file_name.contains("catalog.json") {
-                        let res = s.replace(" ", "");
-                        let chunks = res.split("}\n{");
+                        //let res = s.replace(" ", "");
+                        let chunks = s.split("}\n{");
                         let l = chunks.clone().count();
                         let mut update = "".to_string();
                         for (pos, item) in chunks.enumerate() {
@@ -204,7 +208,6 @@ impl DeclarativeConfig {
                             // last chunk
                             if pos == l - 1 {
                                 update = "{".to_string() + item;
-                                update.truncate(update.len() - 1)
                             }
                             // everything in between
                             if pos > 0 && pos <= l - 2 {
@@ -212,18 +215,25 @@ impl DeclarativeConfig {
                             }
                             let dir = file_name.split("catalog.json").nth(0).unwrap();
                             // parse the file (we know its json)
-                            let dc = serde_json::from_str::<Self>(&update.clone()).unwrap();
-                            let name = dc.clone().name.unwrap().to_string();
-                            // now marshal to json (this cleans all unwanted fields)
-                            // and finally write to disk
-                            let json_contents = serde_json::to_string(&dc).unwrap();
-                            let update_dir =
-                                dir.to_string() + "/updated-configs/" + &name + ".json";
+                            let dc = serde_json::from_str::<Self>(&update.clone());
+                            match dc {
+                                Ok(dc) => {
+                                    let name = dc.clone().name.unwrap().to_string();
+                                    // now marshal to json (this cleans all unwanted fields)
+                                    // and finally write to disk
+                                    let json_contents = serde_json::to_string(&dc).unwrap();
+                                    let update_dir =
+                                        dir.to_string() + "/updated-configs/" + &name + ".json";
 
-                            fs::create_dir_all(dir.to_string() + "/updated-configs")
-                                .expect("must create dir");
-                            fs::write(update_dir.clone(), json_contents.clone())
-                                .expect("must write updated json file");
+                                    fs::create_dir_all(dir.to_string() + "/updated-configs")
+                                        .expect("must create dir");
+                                    fs::write(update_dir.clone(), json_contents.clone())
+                                        .expect("must write updated json file");
+                                }
+                                Err(_) => {
+                                    log.error(&format!("could not parse : {:#?}", &component));
+                                }
+                            }
                         }
                     }
                 }
