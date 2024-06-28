@@ -195,8 +195,11 @@ impl DeclarativeConfig {
                     // break the declarative config into chunks
                     // similar to what ibm have done in the breakdown of catalogs
                     if file_name.contains("catalog.json") {
-                        //let res = s.replace(" ", "");
-                        let chunks = s.split("}\n{");
+                        let mut chunks = s.split("}\n{");
+                        let count = chunks.clone().count();
+                        if count <= 1 {
+                            chunks = s.split("}{")
+                        }
                         let l = chunks.clone().count();
                         let mut update = "".to_string();
                         for (pos, item) in chunks.enumerate() {
@@ -213,8 +216,10 @@ impl DeclarativeConfig {
                             if pos > 0 && pos <= l - 2 {
                                 update = "{".to_string() + item + "}";
                             }
+
                             let dir = file_name.split("catalog.json").nth(0).unwrap();
                             // parse the file (we know its json)
+                            // let dc = serde_json::from_str::<Self>(&result.clone());
                             let dc = serde_json::from_str::<Self>(&update.clone());
                             match dc {
                                 Ok(dc) => {
@@ -263,5 +268,21 @@ impl DeclarativeConfig {
             }
         }
         dc_list
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // this brings everything from parent's scope into this scope
+    use super::*;
+
+    #[test]
+
+    fn build_update_configs_pass() {
+        let log = &Logging {
+            log_level: Level::DEBUG,
+        };
+        let res = DeclarativeConfig::build_updated_configs(log, "tests".to_string());
+        log.info(&format!("{:#?}", res));
     }
 }
