@@ -184,7 +184,7 @@ impl DeclarativeConfig {
                 };
 
                 let component = &file_name.split("/configs/").nth(1).unwrap();
-                log.debug(&format!("updating config : {:#?}", &component));
+                log.trace(&format!("updating config : {:#?}", &component));
 
                 // Read the file contents into a string, returns `io::Result<usize>`
                 let mut s = String::new();
