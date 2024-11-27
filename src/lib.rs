@@ -236,7 +236,10 @@ impl DeclarativeConfig {
                                         .expect("must write updated json file");
                                 }
                                 Err(_) => {
-                                    log.error(&format!("could not parse : {:#?}", &component));
+                                    log.error(&format!(
+                                        "could not parse : {:#?} : {} : {}",
+                                        &component, pos, item
+                                    ));
                                 }
                             }
                         }
