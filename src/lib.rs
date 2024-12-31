@@ -27,7 +27,7 @@ pub struct DeclarativeConfig {
     pub entries: Option<Vec<ChannelEntry>>,
     // this is adding a lot of noise
     // disabled for now
-    //pub properties: Option<Vec<Property>>,
+    pub properties: Option<Vec<Property>>,
     pub image: Option<String>,
     #[serde(rename = "relatedImages")]
     pub related_images: Option<Vec<RelatedImage>>,
@@ -70,7 +70,7 @@ pub struct Property {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Value {
-    //#[serde(rename = "type")]
+    #[serde(rename = "type")]
     pub group: Option<String>,
     pub kind: Option<String>,
     pub version: Option<String>,
