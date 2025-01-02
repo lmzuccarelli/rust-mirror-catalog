@@ -1,16 +1,11 @@
 use custom_logger::*;
-use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
-use std::marker::PhantomData;
-use std::str::FromStr;
-use void::Void;
 use walkdir::WalkDir;
 
 // schema for the declarative_config
@@ -21,12 +16,9 @@ pub struct DeclarativeConfig {
     pub name: Option<String>,
     #[serde(rename = "defaultChannel")]
     pub default_channel: Option<String>,
-    //pub icon: Option<Icon>,
     pub description: Option<String>,
     pub package: Option<String>,
     pub entries: Option<Vec<ChannelEntry>>,
-    // this is adding a lot of noise
-    // disabled for now
     pub properties: Option<Vec<Property>>,
     pub image: Option<String>,
     #[serde(rename = "relatedImages")]
@@ -63,79 +55,14 @@ pub struct Meta {
 pub struct Property {
     #[serde(rename = "type")]
     pub type_prop: String,
-    #[serde(deserialize_with = "string_or_struct")]
     pub value: Value,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Value {
-    #[serde(rename = "type")]
-    pub group: Option<String>,
-    pub kind: Option<String>,
-    pub version: Option<String>,
     #[serde(rename = "packageName")]
     pub package_name: Option<String>,
-}
-
-impl FromStr for Value {
-    // This implementation of `from_str` can never fail, so use the impossible
-    // `Void` type as the error type.
-    type Err = Void;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Value {
-            group: Some(s.to_string()),
-            kind: Some(s.to_string()),
-            version: Some(s.to_string()),
-            // This adds too much noise
-            //data: Some(s.to_string()),
-            package_name: Some(s.to_string()),
-        })
-    }
-}
-
-pub fn string_or_struct<'de, T, D>(deserializer: D) -> Result<T, D::Error>
-where
-    T: Deserialize<'de> + FromStr<Err = Void>,
-    D: Deserializer<'de>,
-{
-    // This is a Visitor that forwards string types to T's `FromStr` impl and
-    // forwards map types to T's `Deserialize` impl. The `PhantomData` is to
-    // keep the compiler from complaining about T being an unused generic type
-    // parameter. We need T in order to know the Value type for the Visitor
-    // impl.
-    struct StringOrStruct<T>(PhantomData<fn() -> T>);
-
-    impl<'de, T> Visitor<'de> for StringOrStruct<T>
-    where
-        T: Deserialize<'de> + FromStr<Err = Void>,
-    {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("string or map")
-        }
-
-        fn visit_str<E>(self, value: &str) -> Result<T, E>
-        where
-            E: de::Error,
-        {
-            Ok(FromStr::from_str(value).unwrap())
-        }
-
-        fn visit_map<M>(self, map: M) -> Result<T, M::Error>
-        where
-            M: MapAccess<'de>,
-        {
-            // `MapAccessDeserializer` is a wrapper that turns a `MapAccess`
-            // into a `Deserializer`, allowing it to be used as the input to T's
-            // `Deserialize` implementation. T then deserializes itself using
-            // the entries from the map visitor.
-            Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-        }
-    }
-    deserializer.deserialize_any(StringOrStruct(PhantomData))
 }
 
 impl DeclarativeConfig {
@@ -217,10 +144,16 @@ impl DeclarativeConfig {
                                 update = "{".to_string() + item + "}";
                             }
 
+                            // shadow update with a replace "null" - absolute crap usage of json,
+                            // not sure why anyone would throw in a null or random value
+                            let re = Regex::new(
+                                r"(\x22value\x22: [0-9\.]+)|(\x22value\x22: \x22[0-9\.]+\x22)|(\x22value\x22: null)",
+                            ).unwrap();
+                            let new_update = re.replace_all(&update, "\"value\": {\"group\":\"\"}");
+
                             let dir = file_name.split("catalog.json").nth(0).unwrap();
                             // parse the file (we know its json)
-                            // let dc = serde_json::from_str::<Self>(&result.clone());
-                            let dc = serde_json::from_str::<Self>(&update.clone());
+                            let dc = serde_json::from_str::<Self>(&new_update.clone());
                             match dc {
                                 Ok(dc) => {
                                     let name = dc.clone().name.unwrap().to_string();
@@ -235,10 +168,12 @@ impl DeclarativeConfig {
                                     fs::write(update_dir.clone(), json_contents.clone())
                                         .expect("must write updated json file");
                                 }
-                                Err(_) => {
+                                Err(err) => {
                                     log.error(&format!(
                                         "could not parse : {:#?} : {} : {}",
-                                        &component, pos, item
+                                        &component,
+                                        pos,
+                                        err.to_string()
                                     ));
                                 }
                             }
