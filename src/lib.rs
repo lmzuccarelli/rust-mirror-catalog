@@ -1,4 +1,4 @@
-use custom_logger::*;
+use custom_logger as log;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -96,7 +96,7 @@ impl DeclarativeConfig {
         Ok(dc)
     }
 
-    pub fn build_updated_configs(log: &Logging, base_dir: String) -> Result<(), Box<dyn Error>> {
+    pub fn build_updated_configs(base_dir: String) -> Result<(), Box<dyn Error>> {
         for entry in WalkDir::new(base_dir.clone())
             .into_iter()
             .filter_map(Result::ok)
@@ -111,7 +111,7 @@ impl DeclarativeConfig {
                 };
 
                 let component = &file_name.split("/configs/").nth(1).unwrap();
-                log.trace(&format!("updating config : {:#?}", &component));
+                log::trace!("updating config : {:#?}", &component);
 
                 // Read the file contents into a string, returns `io::Result<usize>`
                 let mut s = String::new();
@@ -169,12 +169,12 @@ impl DeclarativeConfig {
                                         .expect("must write updated json file");
                                 }
                                 Err(err) => {
-                                    log.error(&format!(
+                                    log::error!(
                                         "could not parse : {:#?} : {} : {}",
                                         &component,
                                         pos,
                                         err.to_string()
-                                    ));
+                                    );
                                 }
                             }
                         }
@@ -217,10 +217,8 @@ mod tests {
     #[test]
 
     fn build_update_configs_pass() {
-        let log = &Logging {
-            log_level: Level::DEBUG,
-        };
-        let res = DeclarativeConfig::build_updated_configs(log, "tests".to_string());
-        log.info(&format!("{:#?}", res));
+        log::Logging::new().init().expect("should initialize");
+        let res = DeclarativeConfig::build_updated_configs("tests".to_string());
+        log::info!("{:#?}", res);
     }
 }
