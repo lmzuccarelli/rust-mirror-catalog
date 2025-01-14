@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
+use std::path::Path;
 use walkdir::WalkDir;
 
 // schema for the declarative_config
@@ -70,112 +71,116 @@ impl DeclarativeConfig {
         let mut packages = vec![];
         let paths = fs::read_dir(dir)?;
         for p in paths.into_iter() {
-            packages.push(p.unwrap().file_name().to_os_string().into_string().unwrap());
+            packages.push(p.unwrap().file_name().into_string().unwrap());
         }
         Ok(packages)
     }
 
-    pub fn read_operator_catalog(in_file: String) -> Result<DeclarativeConfig, Box<dyn Error>> {
+    pub fn read_operator_catalog<P>(in_file: P) -> Result<DeclarativeConfig, Box<dyn Error>>
+    where
+        P: AsRef<Path>,
+    {
         // Open the path in read-only mode, returns `io::Result<File>`
         let mut file = match File::open(&in_file) {
-            Err(why) => panic!("couldn't open {}: {}", in_file, why),
+            Err(why) => panic!("couldn't open {}: {}", in_file.as_ref().display(), why),
             Ok(file) => file,
         };
 
         // Read the file contents into a string, returns `io::Result<usize>`
         let mut s = String::new();
         file.read_to_string(&mut s)?;
-        let dc: DeclarativeConfig;
 
-        // check if we have yaml or json in the raw data
-        if s.contains("{") {
-            dc = serde_json::from_str::<Self>(&s).unwrap();
-        } else {
-            dc = serde_yaml::from_str::<Self>(&s).unwrap();
-        }
-        Ok(dc)
+        Ok(
+            // check if we have yaml or json in the raw data
+            if s.contains('{') {
+                serde_json::from_str::<Self>(&s).unwrap()
+            } else {
+                serde_yaml::from_str::<Self>(&s).unwrap()
+            },
+        )
     }
 
-    pub fn build_updated_configs(base_dir: String) -> Result<(), Box<dyn Error>> {
-        for entry in WalkDir::new(base_dir.clone())
+    pub fn build_updated_configs<P>(base_dir: P) -> Result<(), Box<dyn Error>>
+    where
+        P: AsRef<Path>,
+    {
+        for entry in WalkDir::new(base_dir)
             .into_iter()
             .filter_map(Result::ok)
+            .filter(|e| e.path().is_file())
         {
-            if entry.path().is_file() {
-                let file_name = "".to_string() + entry.path().display().to_string().as_str();
+            let file_name = entry.path();
+            let file_name_str = file_name.to_string_lossy();
 
-                // Open the path in read-only mode, returns `Result()`
-                let mut f = match File::open(&file_name) {
-                    Err(why) => panic!("couldn't open {}: {}", file_name, why),
-                    Ok(file) => file,
-                };
+            // Open the path in read-only mode, returns `Result()`
+            let mut f = match File::open(file_name) {
+                Err(why) => panic!("couldn't open {}: {}", file_name_str, why),
+                Ok(file) => file,
+            };
 
-                let component = &file_name.split("/configs/").nth(1).unwrap();
-                log::trace!("updating config : {:#?}", &component);
+            let component = file_name_str.split("/configs/").nth(1).unwrap();
+            log::trace!("updating config : {:#?}", component);
 
-                // Read the file contents into a string, returns `io::Result<usize>`
-                let mut s = String::new();
-                f.read_to_string(&mut s)?;
+            // Read the file contents into a string, returns `io::Result<usize>`
+            let mut s = String::new();
+            f.read_to_string(&mut s)?;
 
-                // check if we have yaml or json in the raw data
-                if s.contains("{") {
-                    // break the declarative config into chunks
-                    // similar to what ibm have done in the breakdown of catalogs
-                    if file_name.contains("catalog.json") {
-                        let mut chunks = s.split("}\n{");
-                        let count = chunks.clone().count();
-                        if count <= 1 {
-                            chunks = s.split("}{")
+            // check if we have yaml or json in the raw data
+            if s.contains('{') {
+                // break the declarative config into chunks
+                // similar to what ibm have done in the breakdown of catalogs
+                if file_name_str.contains("catalog.json") {
+                    let mut chunks = s.split("}\n{");
+                    let count = chunks.clone().count();
+                    if count <= 1 {
+                        chunks = s.split("}{")
+                    }
+                    let l = chunks.clone().count();
+                    let mut update = "".to_string();
+                    for (pos, item) in chunks.enumerate() {
+                        // needs some refactoring
+                        // first chunk
+                        if pos == 0 {
+                            update = item.to_string() + "}";
                         }
-                        let l = chunks.clone().count();
-                        let mut update = "".to_string();
-                        for (pos, item) in chunks.enumerate() {
-                            // needs some refactoring
-                            // first chunk
-                            if pos == 0 {
-                                update = item.to_string() + "}";
-                            }
-                            // last chunk
-                            if pos == l - 1 {
-                                update = "{".to_string() + item;
-                            }
-                            // everything in between
-                            if pos > 0 && pos <= l - 2 {
-                                update = "{".to_string() + item + "}";
-                            }
+                        // last chunk
+                        if pos == l - 1 {
+                            update = "{".to_string() + item;
+                        }
+                        // everything in between
+                        if pos > 0 && pos <= l - 2 {
+                            update = "{".to_string() + item + "}";
+                        }
 
-                            // shadow update with a replace "null" - absolute crap usage of json,
-                            // not sure why anyone would throw in a null or random value
-                            let re = Regex::new(
+                        // shadow update with a replace "null" - absolute crap usage of json,
+                        // not sure why anyone would throw in a null or random value
+                        let re = Regex::new(
                                 r"(\x22value\x22: [0-9\.]+)|(\x22value\x22: \x22[0-9\.]+\x22)|(\x22value\x22: null)",
                             ).unwrap();
-                            let new_update = re.replace_all(&update, "\"value\": {\"group\":\"\"}");
+                        let new_update = re.replace_all(&update, "\"value\": {\"group\":\"\"}");
 
-                            let dir = file_name.split("catalog.json").nth(0).unwrap();
-                            // parse the file (we know its json)
-                            let dc = serde_json::from_str::<Self>(&new_update.clone());
-                            match dc {
-                                Ok(dc) => {
-                                    let name = dc.clone().name.unwrap().to_string();
-                                    // now marshal to json (this cleans all unwanted fields)
-                                    // and finally write to disk
-                                    let json_contents = serde_json::to_string(&dc).unwrap();
-                                    let update_dir =
-                                        dir.to_string() + "/updated-configs/" + &name + ".json";
+                        let dir = file_name_str.split("catalog.json").nth(0).unwrap();
+                        // parse the file (we know its json)
+                        let dc = serde_json::from_str::<Self>(&new_update);
+                        match dc {
+                            Ok(dc) => {
+                                let name = dc.name.clone().unwrap();
+                                // now marshal to json (this cleans all unwanted fields)
+                                // and finally write to disk
+                                let json_contents = serde_json::to_string(&dc).unwrap();
+                                let update_dir = Path::new(dir).join("updated-configs");
 
-                                    fs::create_dir_all(dir.to_string() + "/updated-configs")
-                                        .expect("must create dir");
-                                    fs::write(update_dir.clone(), json_contents.clone())
-                                        .expect("must write updated json file");
-                                }
-                                Err(err) => {
-                                    log::error!(
-                                        "could not parse : {:#?} : {} : {}",
-                                        &component,
-                                        pos,
-                                        err.to_string()
-                                    );
-                                }
+                                fs::create_dir_all(&update_dir).expect("must create dir");
+                                fs::write(update_dir.join(name + ".json"), json_contents.as_str())
+                                    .expect("must write updated json file");
+                            }
+                            Err(err) => {
+                                log::error!(
+                                    "could not parse : {:#?} : {} : {}",
+                                    &component,
+                                    pos,
+                                    err
+                                );
                             }
                         }
                     }
@@ -185,25 +190,29 @@ impl DeclarativeConfig {
         Ok(())
     }
 
-    pub fn get_declarativeconfig_map(base_dir: String) -> HashMap<String, Self> {
+    pub fn get_declarativeconfig_map<P>(base_dir: P) -> HashMap<String, Self>
+    where
+        P: AsRef<Path>,
+    {
         let mut dc_list = HashMap::new();
 
-        for entry in WalkDir::new(base_dir.clone())
+        for entry in WalkDir::new(base_dir.as_ref())
             .into_iter()
             .filter_map(Result::ok)
+            .filter(|e| e.path().is_file())
         {
-            if entry.path().is_file() {
-                let file_name =
-                    base_dir.clone() + entry.path().file_name().unwrap().to_str().unwrap();
-                let res = DeclarativeConfig::read_operator_catalog(file_name.clone()).unwrap();
-                let name = res.clone().name.clone();
-                let schema = res.clone().schema.clone();
-                let key = name.clone().unwrap() + "=" + schema.clone().unwrap().as_str();
-                dc_list.insert(
-                    key,
-                    DeclarativeConfig::read_operator_catalog(file_name).unwrap(),
-                );
-            }
+            let file_name = Path::new(base_dir.as_ref()).join(entry.path());
+
+            let res = DeclarativeConfig::read_operator_catalog(&file_name).unwrap();
+            let key = format!(
+                "{}={}",
+                res.name.as_ref().unwrap(),
+                res.schema.as_ref().unwrap()
+            );
+            dc_list.insert(
+                key,
+                DeclarativeConfig::read_operator_catalog(&file_name).unwrap(),
+            );
         }
         dc_list
     }
@@ -218,7 +227,7 @@ mod tests {
 
     fn build_update_configs_pass() {
         log::Logging::new().init().expect("should initialize");
-        let res = DeclarativeConfig::build_updated_configs("tests".to_string());
+        let res = DeclarativeConfig::build_updated_configs("tests");
         log::info!("{:#?}", res);
     }
 }
