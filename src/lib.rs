@@ -81,10 +81,7 @@ impl DeclarativeConfig {
         P: AsRef<Path>,
     {
         // Open the path in read-only mode, returns `io::Result<File>`
-        let mut file = match File::open(&in_file) {
-            Err(why) => panic!("couldn't open {}: {}", in_file.as_ref().display(), why),
-            Ok(file) => file,
-        };
+        let mut file = File::open(&in_file)?;
 
         // Read the file contents into a string, returns `io::Result<usize>`
         let mut s = String::new();
@@ -113,10 +110,7 @@ impl DeclarativeConfig {
             let file_name_str = file_name.to_string_lossy();
 
             // Open the path in read-only mode, returns `Result()`
-            let mut f = match File::open(file_name) {
-                Err(why) => panic!("couldn't open {}: {}", file_name_str, why),
-                Ok(file) => file,
-            };
+            let mut f = File::open(file_name)?;
 
             let component = file_name_str.split("/configs/").nth(1).unwrap();
             log::trace!("updating config : {:#?}", component);
