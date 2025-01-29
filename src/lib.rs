@@ -77,10 +77,7 @@ impl DeclarativeConfig {
 
     pub fn read_operator_catalog(in_file: String) -> Result<DeclarativeConfig, Box<dyn Error>> {
         // Open the path in read-only mode, returns `io::Result<File>`
-        let mut file = match File::open(&in_file) {
-            Err(why) => panic!("couldn't open {}: {}", in_file, why),
-            Ok(file) => file,
-        };
+        let mut file = File::open(&in_file)?;
 
         // Read the file contents into a string, returns `io::Result<usize>`
         let mut s = String::new();
@@ -105,10 +102,7 @@ impl DeclarativeConfig {
                 let file_name = "".to_string() + entry.path().display().to_string().as_str();
 
                 // Open the path in read-only mode, returns `Result()`
-                let mut f = match File::open(&file_name) {
-                    Err(why) => panic!("couldn't open {}: {}", file_name, why),
-                    Ok(file) => file,
-                };
+                let mut f = File::open(&file_name)?;
 
                 let component = &file_name.split("/configs/").nth(1).unwrap();
                 log.trace(&format!("updating config : {:#?}", &component));
