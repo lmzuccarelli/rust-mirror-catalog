@@ -123,7 +123,7 @@ impl DeclarativeConfig {
             if s.contains('{') {
                 // break the declarative config into chunks
                 // similar to what ibm have done in the breakdown of catalogs
-                if file_name_str.contains("catalog.json") {
+                if file_name_str.contains("catalog.json") || file_name_str.contains("index.json") {
                     let mut chunks = s.split("}\n{");
                     let count = chunks.clone().count();
                     if count <= 1 {
@@ -152,8 +152,11 @@ impl DeclarativeConfig {
                                 r"(\x22value\x22: [0-9\.]+)|(\x22value\x22: \x22[0-9\.]+\x22)|(\x22value\x22: null)",
                             ).unwrap();
                         let new_update = re.replace_all(&update, "\"value\": {\"group\":\"\"}");
+                        let mut dir = file_name_str.split("catalog.json").nth(0).unwrap();
+                        if dir.contains("index.json") {
+                            dir = file_name_str.split("index.json").nth(0).unwrap();
+                        }
 
-                        let dir = file_name_str.split("catalog.json").nth(0).unwrap();
                         // parse the file (we know its json)
                         let dc = serde_json::from_str::<Self>(&new_update);
                         match dc {
@@ -162,9 +165,9 @@ impl DeclarativeConfig {
                                 if name.is_some() {
                                     // now marshal to json (this cleans all unwanted fields)
                                     // and finally write to disk
+
                                     let json_contents = serde_json::to_string(&dc).unwrap();
                                     let update_dir = Path::new(dir).join("updated-configs");
-
                                     fs::create_dir_all(&update_dir).expect("must create dir");
                                     fs::write(
                                         update_dir.join(name.unwrap() + ".json"),
