@@ -1,4 +1,4 @@
-use custom_logger as log;
+use custom_logger::*;
 use regex::Regex;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -113,7 +113,7 @@ impl DeclarativeConfig {
             let mut f = File::open(file_name)?;
 
             let component = file_name_str.split("/configs/").nth(1).unwrap();
-            log::trace!("updating config : {:#?}", component);
+            trace!("updating config : {:#?}", component);
 
             // Read the file contents into a string, returns `io::Result<usize>`
             let mut s = String::new();
@@ -158,23 +158,28 @@ impl DeclarativeConfig {
                         let dc = serde_json::from_str::<Self>(&new_update);
                         match dc {
                             Ok(dc) => {
-                                let name = dc.name.clone().unwrap();
-                                // now marshal to json (this cleans all unwanted fields)
-                                // and finally write to disk
-                                let json_contents = serde_json::to_string(&dc).unwrap();
-                                let update_dir = Path::new(dir).join("updated-configs");
+                                let name = dc.name.clone();
+                                if name.is_some() {
+                                    // now marshal to json (this cleans all unwanted fields)
+                                    // and finally write to disk
+                                    let json_contents = serde_json::to_string(&dc).unwrap();
+                                    let update_dir = Path::new(dir).join("updated-configs");
 
-                                fs::create_dir_all(&update_dir).expect("must create dir");
-                                fs::write(update_dir.join(name + ".json"), json_contents.as_str())
+                                    fs::create_dir_all(&update_dir).expect("must create dir");
+                                    fs::write(
+                                        update_dir.join(name.unwrap() + ".json"),
+                                        json_contents.as_str(),
+                                    )
                                     .expect("must write updated json file");
+                                } else {
+                                    warn!(
+                                        "could not decode decalarative config for {}",
+                                        &component
+                                    );
+                                }
                             }
                             Err(err) => {
-                                log::error!(
-                                    "could not parse : {:#?} : {} : {}",
-                                    &component,
-                                    pos,
-                                    err
-                                );
+                                warn!("could not parse : {:#?} : {} : {}", &component, pos, err);
                             }
                         }
                     }
@@ -195,18 +200,24 @@ impl DeclarativeConfig {
             .filter_map(Result::ok)
             .filter(|e| e.path().is_file())
         {
-            let file_name = Path::new(base_dir.as_ref()).join(entry.path());
-
-            let res = DeclarativeConfig::read_operator_catalog(&file_name).unwrap();
-            let key = format!(
-                "{}={}",
-                res.name.as_ref().unwrap(),
-                res.schema.as_ref().unwrap()
-            );
-            dc_list.insert(
-                key,
-                DeclarativeConfig::read_operator_catalog(&file_name).unwrap(),
-            );
+            let res = DeclarativeConfig::read_operator_catalog(entry.path());
+            if res.is_ok() {
+                let kv = res.unwrap();
+                let key = format!(
+                    "{}={}",
+                    kv.name.as_ref().unwrap(),
+                    kv.schema.as_ref().unwrap()
+                );
+                dc_list.insert(
+                    key,
+                    DeclarativeConfig::read_operator_catalog(entry.path()).unwrap(),
+                );
+            } else {
+                warn!(
+                    "could not locate declarative config {}",
+                    entry.path().to_string_lossy()
+                );
+            }
         }
         dc_list
     }
@@ -220,8 +231,8 @@ mod tests {
     #[test]
 
     fn build_update_configs_pass() {
-        log::Logging::new().init().expect("should initialize");
+        Logging::new().init().expect("should initialize");
         let res = DeclarativeConfig::build_updated_configs("tests");
-        log::info!("{:#?}", res);
+        info!("{:#?}", res);
     }
 }
